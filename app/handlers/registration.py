@@ -30,6 +30,7 @@ async def process_phone(message: types.Message, state: FSMContext):
         await api_client.link_telegram_user(
             telegram_id=message.from_user.id,
             user_id=user_id,
+            chat_id=message.chat.id,
             username=message.from_user.username,
             language_code=message.from_user.language_code,
             language=message.from_user.language_code 

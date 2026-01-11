@@ -1,4 +1,5 @@
 import httpx
+from loguru import logger
 from app.config import API_BASE_URL
 from typing import Optional
 
@@ -21,14 +22,21 @@ class ApiClient:
             response.raise_for_status()
             return response.json()["id"]
 
-    async def link_telegram_user(self, telegram_id: int, user_id: str, username: Optional[str] = None, language_code: Optional[str] = None, language: Optional[str] = None):
-        """
-        Links a Telegram account to an existing user.
-        """
+    async def link_telegram_user(
+        self,
+        telegram_id: int,
+        user_id: str,
+        chat_id: int,
+        username: Optional[str] = None,
+        language_code: Optional[str] = None,
+        language: Optional[str] = None
+    ):
+        """Link a Telegram user to an existing backend user."""
         async with httpx.AsyncClient() as client:
             payload = {
                 "telegram_id": telegram_id,
                 "user_id": user_id,
+                "chat_id": chat_id,
                 "username": username,
                 "language_code": language_code,
                 "language": language
@@ -97,11 +105,13 @@ class ApiClient:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(f"{self.base_url}/telegram/{telegram_id}")
+                logger.debug(f"GET {self.base_url}/telegram/{telegram_id} -> {response.status_code}")
                 if response.status_code == 404:
                     return None
                 response.raise_for_status()
                 return response.json()
-            except httpx.HTTPError:
+            except httpx.HTTPError as e:
+                logger.error(f"HTTP Error: {e}")
                 return None
 
 

@@ -7,5 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "aiogram>=3.23.0",
     "httpx>=0.28.1",
+    "loguru>=0.7.3",
     "python-dotenv>=1.2.1",
 ]

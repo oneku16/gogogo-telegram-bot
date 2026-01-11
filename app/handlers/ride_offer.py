@@ -1,4 +1,5 @@
 import os
+from loguru import logger
 import aiofiles
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
@@ -136,8 +137,11 @@ async def skip_photo(message: types.Message, state: FSMContext):
     # Same logic but no photo
     user_data = await state.get_data()
     driver_id = user_data.get("user_id")
+    logger.debug(f"skip_photo state data: {user_data}")
+    logger.debug(f"skip_photo driver_id from state: {driver_id}")
     
     if not driver_id:
+            logger.warning(f"driver_id lost, attempting recovery via API for tg_id: {message.from_user.id}")
             tg_user = await api_client.get_telegram_user(message.from_user.id)
             if tg_user:
                 driver_id = tg_user["user_id"]
@@ -161,9 +165,7 @@ async def skip_photo(message: types.Message, state: FSMContext):
         await message.answer("Ride Offer Published (No photo)! 🚀\nSearching for passengers...", reply_markup=get_main_menu_kb())
         await state.clear()
         
-        # Async Matching
-        import asyncio
-        asyncio.create_task(check_for_passengers(message, offer_data))
+
 
     except Exception as e:
         await message.answer(f"Error publishing offer: {e}")
