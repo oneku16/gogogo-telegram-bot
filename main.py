@@ -33,6 +33,11 @@ async def main():
     from app.services.api_client import api_client
     await api_client.start()
 
+    # Set Bot Commands (Hamburger Menu)
+    from app.commands import set_default_commands
+    await set_default_commands(bot)
+
+
     try:
         await dp.start_polling(bot)
     finally:

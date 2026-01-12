@@ -35,7 +35,7 @@ async def webhook_handler(request: web.Request):
                 text += f"📞 Driver contacts: "
                 contacts_parts = []
                 if driver_phone:
-                    contacts_parts.append(f"<code>{driver_phone}</code>")
+                    contacts_parts.append(f"<code>+{driver_phone}</code>")
                 if driver_username:
                         contacts_parts.append(f"@{driver_username}")
                 
@@ -74,7 +74,7 @@ async def webhook_handler(request: web.Request):
                     text += f"📞 Driver contacts: "
                     contacts_parts = []
                     if driver_phone:
-                        contacts_parts.append(f"<code>{driver_phone}</code>")
+                        contacts_parts.append(f"<code>+{driver_phone}</code>")
                     if driver_username:
                          contacts_parts.append(f"@{driver_username}")
                     

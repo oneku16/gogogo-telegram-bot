@@ -40,6 +40,15 @@ class ApiClient:
         response.raise_for_status()
         return response.json()["id"]
 
+    async def update_user_role(self, telegram_id: int, role: str) -> dict:
+        client = await self._get_client()
+        response = await client.patch(
+            f"{self.base_url}/telegram/{telegram_id}",
+            json={"role": role}
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def link_telegram_user(
         self,
         telegram_id: int,
@@ -47,7 +56,8 @@ class ApiClient:
         chat_id: int,
         username: Optional[str] = None,
         language_code: Optional[str] = None,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        role: Optional[str] = None
     ):
         """Link a Telegram user to an existing backend user."""
         client = await self._get_client()
@@ -57,7 +67,8 @@ class ApiClient:
             "chat_id": chat_id,
             "username": username,
             "language_code": language_code,
-            "language": language
+            "language": language,
+            "role": role
         }
         response = await client.post(f"{self.base_url}/telegram/", json=payload)
         response.raise_for_status()
@@ -115,6 +126,34 @@ class ApiClient:
         response = await client.get(f"{self.base_url}/requests/search", params=params)
         response.raise_for_status()
         return response.json()
+
+    async def get_driver_offers(self, driver_id: str) -> list:
+        client = await self._get_client()
+        response = await client.get(f"{self.base_url}/drivers/{driver_id}/offers")
+        response.raise_for_status()
+        return response.json()
+
+    async def get_passenger_requests(self, passenger_id: str) -> list:
+        client = await self._get_client()
+        response = await client.get(f"{self.base_url}/passengers/{passenger_id}/requests")
+        response.raise_for_status()
+        return response.json()
+
+    async def delete_ride_offer(self, offer_id: str, driver_id: str) -> None:
+        client = await self._get_client()
+        response = await client.delete(
+            f"{self.base_url}/offers/{offer_id}",
+            params={"driver_id": driver_id}
+        )
+        response.raise_for_status()
+
+    async def delete_ride_request(self, request_id: str, passenger_id: str) -> None:
+        client = await self._get_client()
+        response = await client.delete(
+            f"{self.base_url}/requests/{request_id}",
+            params={"passenger_id": passenger_id}
+        )
+        response.raise_for_status()
 
     async def get_telegram_user(self, telegram_id: int) -> Optional[dict]:
         """
