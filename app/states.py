@@ -11,7 +11,8 @@ class RideOfferState(StatesGroup):
     TIME = State()
     SEATS = State()
     CAR_MODEL = State()
-    PHOTO = State()
+    PRICE = State()
+    CONFIRMATION = State()
 
 class RideRequestState(StatesGroup):
     START_LOC = State()
@@ -19,3 +20,4 @@ class RideRequestState(StatesGroup):
     DATE = State()
     TIME = State()
     SEATS = State()
+    CONFIRMATION = State()

@@ -29,10 +29,15 @@ async def main():
     await site.start()
     logging.info("Webhook server started on port 8001")
 
+    # Start ApiClient Session
+    from app.services.api_client import api_client
+    await api_client.start()
+
     try:
         await dp.start_polling(bot)
     finally:
         await runner.cleanup()
+        await api_client.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

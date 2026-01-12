@@ -6,7 +6,7 @@ from app.keyboards import get_phone_request_kb, get_main_menu_kb
 from app.services.api_client import ApiClient
 
 router = Router()
-api_client = ApiClient()
+from app.services.api_client import api_client
 
 # cmd_start is now handled in menu.py
 

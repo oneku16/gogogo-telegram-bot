@@ -6,7 +6,7 @@ from app.services.api_client import ApiClient
 from app.states import RegistrationState
 
 router = Router()
-api_client = ApiClient()
+from app.services.api_client import api_client
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
