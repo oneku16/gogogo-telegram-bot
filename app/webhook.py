@@ -84,7 +84,7 @@ async def webhook_handler(request: web.Request):
                     await bot.send_message(chat_id=passenger_chat_id, text=text, parse_mode="HTML")
 
 
-            
+             
         return web.Response(text="OK")
     except Exception as e:
         logger.error(f"Webhook error: {e}")
