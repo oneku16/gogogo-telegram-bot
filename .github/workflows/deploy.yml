@@ -1,0 +1,37 @@
+name: Deploy Bot to Ubuntu Home Server
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  deploy:
+    name: Deploy to Self-Hosted Runner
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # --- REMOVED BUILDX STEP (It causes timeouts on local runners) ---
+
+      - name: Build and Run Container
+        run: |
+          # 1. Build the image
+          docker build -t gogogo-bot -f docker/Dockerfile.prod .
+
+          # 2. Stop and remove old container
+          docker stop gogogo-bot || true
+          docker rm gogogo-bot || true
+
+          # 3. Run new container
+          # HOST PORT 8001 -> CONTAINER PORT 8000
+          docker run -d \
+            --name gogogo-bot \
+            --restart unless-stopped \
+            -p 8001:8000 \
+            --env-file /home/app2/.env.prod \
+            gogogo-bot
+            
+      - name: Clean up system
+        run: docker system prune -f
