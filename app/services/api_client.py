@@ -40,14 +40,18 @@ class ApiClient:
         response.raise_for_status()
         return response.json()["id"]
 
-    async def update_user_role(self, telegram_id: int, role: str) -> dict:
+    async def update_telegram_user(self, telegram_id: int, **kwargs) -> dict:
         client = await self._get_client()
         response = await client.patch(
             f"{self.base_url}/telegram/{telegram_id}",
-            json={"role": role}
+            json=kwargs
         )
         response.raise_for_status()
         return response.json()
+
+    # Generic alias/wrapper if needed to maintain backward compat or just replace usage
+    async def update_user_role(self, telegram_id: int, role: str) -> dict:
+        return await self.update_telegram_user(telegram_id, role=role)
 
     async def link_telegram_user(
         self,

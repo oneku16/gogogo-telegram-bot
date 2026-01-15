@@ -8,11 +8,13 @@ from app.locales import t, LANG_EN
 
 router = Router()
 from app.services.api_client import api_client
+from app.utils.deletion import delete_prev_messages
 
 # cmd_start is now handled in menu.py
 
 @router.message(RegistrationState.WAITING_FOR_PHONE, F.contact)
 async def process_phone(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     contact = message.contact
     
     # 1. Register User
@@ -70,6 +72,8 @@ async def process_role_callback(callback: types.CallbackQuery, state: FSMContext
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     role = callback.data.split(":")[1] # driver / passenger
+    
+    await callback.message.delete()
     
     user_id = user_data.get("user_id")
     

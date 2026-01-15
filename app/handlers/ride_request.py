@@ -1,11 +1,13 @@
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from app.states import RideRequestState
+from app.states import RideRequestState, OverwriteState
 from app.services.api_client import api_client
-from app.keyboards import get_main_menu_kb, get_cancel_kb, get_common_locations_kb, get_dates_kb, get_seats_kb, get_confirmation_kb
+from app.keyboards import get_main_menu_kb, get_cancel_kb, get_common_locations_kb, get_dates_kb, get_seats_kb, get_confirmation_kb, get_overwrite_confirm_kb
+from app.handlers.common import has_active_post, get_latest_post
 from app.utils.formatting import parse_date, parse_time, format_date, format_time
 from app.locales import t, LANG_EN
 from datetime import date, time
+from app.utils.deletion import delete_prev_messages, record_bot_message
 
 router = Router()
 
@@ -16,9 +18,65 @@ def get_localized_texts(key):
 
 @router.message(F.text.in_(get_localized_texts("passenger_action")))
 async def start_passenger_flow(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
-    await message.answer(t("start_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    user_id = user_data.get("user_id")
+
+    # Recovery
+    if not user_id:
+        tg_user = await api_client.get_telegram_user(message.from_user.id)
+        if tg_user:
+            user_id = tg_user["user_id"]
+            lang = tg_user.get("language", LANG_EN)
+            role = tg_user.get("role")
+            await state.update_data(user_id=user_id, language=lang, role=role)
+        else:
+            await message.answer(t("welcome_new", lang))
+            return
+
+    # Check active post
+    if await has_active_post(user_id):
+        pt, p = await get_latest_post(user_id)
+        # Create summary of active post
+        post_summary = t("mypost_none", lang)
+        if p:
+             # Format Date/Time
+             d_iso = p['travel_start_date']
+             t_iso = p['travel_start_time']
+             
+             try:
+                 if isinstance(d_iso, str):
+                     d_obj = date.fromisoformat(d_iso)
+                     d_str = format_date(d_obj)
+                 else:
+                     d_str = str(d_iso)
+                     
+                 if isinstance(t_iso, str):
+                     if len(t_iso.split(":")) == 3:
+                         t_obj = time.fromisoformat(t_iso)
+                     else:
+                         t_obj = time.fromisoformat(t_iso)
+                     t_str = format_time(t_obj)
+                 else:
+                     t_str = str(t_iso)
+             except Exception:
+                 d_str = str(d_iso)
+                 t_str = str(t_iso)
+
+             if pt == "offer":
+                 post_summary = t("mypost_offer", lang, start=p['start_location'].capitalize(), end=p['end_location'].capitalize(), date=d_str, time=t_str, seats=p['free_seats'])
+             else:
+                 post_summary = t("mypost_request", lang, start=p['start_location'].capitalize(), end=p['end_location'].capitalize(), date=d_str, time=t_str, seats=p['seat_amount'])
+
+        msg = await message.answer(t("active_post_limit", lang, post_summary=post_summary), reply_markup=get_overwrite_confirm_kb(lang), parse_mode="HTML")
+        await record_bot_message(state, msg)
+        await state.set_state(OverwriteState.CONFIRM)
+        await state.update_data(next_flow="passenger")
+        return
+
+    msg = await message.answer(t("start_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.START_LOC)
 
 @router.callback_query(RideRequestState.START_LOC, F.data.startswith("loc:"))
@@ -29,16 +87,20 @@ async def process_start_loc_callback(callback: types.CallbackQuery, state: FSMCo
     
     await state.update_data(start_location=city)
     await callback.answer(t("selected", lang, value=city))
-    await callback.message.answer(t("loc_start", lang, value=city))
-    await callback.message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    await callback.message.delete()
+    
+    msg = await callback.message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.END_LOC)
 
 @router.message(RideRequestState.START_LOC)
 async def process_start_loc_text(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     await state.update_data(start_location=message.text)
-    await message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    msg = await message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.END_LOC)
 
 @router.callback_query(RideRequestState.END_LOC, F.data.startswith("loc:"))
@@ -48,16 +110,20 @@ async def process_end_loc_callback(callback: types.CallbackQuery, state: FSMCont
     location = callback.data.split(":")[1]
     await state.update_data(end_location=location)
     await callback.answer(t("selected", lang, value=location))
-    await callback.message.answer(t("loc_dest", lang, value=location))
-    await callback.message.answer(t("date_prompt", lang), reply_markup=get_dates_kb(lang))
+    await callback.message.delete()
+    
+    msg = await callback.message.answer(t("date_prompt", lang), reply_markup=get_dates_kb(lang))
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.DATE)
 
 @router.message(RideRequestState.END_LOC)
 async def process_end_loc(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     await state.update_data(end_location=message.text)
-    await message.answer(t("date_prompt", lang), reply_markup=get_dates_kb(lang))
+    msg = await message.answer(t("date_prompt", lang), reply_markup=get_dates_kb(lang))
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.DATE)
 
 @router.callback_query(RideRequestState.DATE, F.data.startswith("date:"))
@@ -69,35 +135,43 @@ async def process_date_callback(callback: types.CallbackQuery, state: FSMContext
         d = parse_date(date_str) 
         await state.update_data(travel_start_date=d.isoformat())
         await callback.answer(t("selected", lang, value=date_str))
-        await callback.message.answer(t("date_selected", lang, value=date_str))
-        await callback.message.answer(t("time_prompt", lang))
+        await callback.message.delete()
+        
+        msg = await callback.message.answer(t("time_prompt", lang))
+        await record_bot_message(state, msg)
         await state.set_state(RideRequestState.TIME)
     except ValueError:
         await callback.answer(t("error_generic", lang, error="Date error"))
 
 @router.message(RideRequestState.DATE)
 async def process_date(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     try:
         d = parse_date(message.text)
         await state.update_data(travel_start_date=d.isoformat())
-        await message.answer(t("time_prompt", lang))
+        msg = await message.answer(t("time_prompt", lang))
+        await record_bot_message(state, msg)
         await state.set_state(RideRequestState.TIME)
     except ValueError:
-        await message.answer(t("error_date", lang), reply_markup=get_dates_kb(lang))
+        msg = await message.answer(t("error_date", lang), reply_markup=get_dates_kb(lang))
+        await record_bot_message(state, msg)
 
 @router.message(RideRequestState.TIME)
 async def process_time(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     try:
         t_val = parse_time(message.text)
         await state.update_data(travel_start_time=t_val.isoformat())
-        await message.answer(t("seats_request_prompt", lang), reply_markup=get_seats_kb())
+        msg = await message.answer(t("seats_request_prompt", lang), reply_markup=get_seats_kb())
+        await record_bot_message(state, msg)
         await state.set_state(RideRequestState.SEATS)
     except ValueError:
-        await message.answer(t("error_time", lang))
+        msg = await message.answer(t("error_time", lang))
+        await record_bot_message(state, msg)
 
 @router.callback_query(RideRequestState.SEATS, F.data.startswith("seats:"))
 async def process_seats_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -116,11 +190,14 @@ async def process_seats_callback(callback: types.CallbackQuery, state: FSMContex
     )
     
     await callback.answer(t("selected", lang, value=seat_amount))
-    await callback.message.answer(summary, reply_markup=get_confirmation_kb(lang), parse_mode="HTML")
+    await callback.message.delete()
+    msg = await callback.message.answer(summary, reply_markup=get_confirmation_kb(lang), parse_mode="HTML")
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.CONFIRMATION)
 
 @router.message(RideRequestState.SEATS)
 async def process_seats(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     seat_amount = message.text 
@@ -135,12 +212,15 @@ async def process_seats(message: types.Message, state: FSMContext):
         seats=seat_amount
     )
     
-    await message.answer(summary, reply_markup=get_confirmation_kb(lang), parse_mode="HTML")
+    msg = await message.answer(summary, reply_markup=get_confirmation_kb(lang), parse_mode="HTML")
+    await record_bot_message(state, msg)
     await state.set_state(RideRequestState.CONFIRMATION)
 
 
 @router.message(RideRequestState.CONFIRMATION)
 async def process_confirmation(message: types.Message, state: FSMContext, bot):
+    # await delete_prev_messages(message, state) # Handled locally
+    
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     
@@ -149,6 +229,8 @@ async def process_confirmation(message: types.Message, state: FSMContext, bot):
     edit_text = t("edit_button", lang)
     
     if message.text == confirm_text:
+        await message.delete() # Only delete "Yes", Keep Summary
+        
         # Recover ID if missing
         passenger_id = user_data.get("user_id")
         if not passenger_id:
@@ -156,7 +238,8 @@ async def process_confirmation(message: types.Message, state: FSMContext, bot):
              if tg_user:
                  passenger_id = tg_user["user_id"]
              else:
-                 await message.answer(t("error_generic", lang, error="User not found. Please /start again."))
+                 msg = await message.answer(t("error_generic", lang, error="User not found. Please /start again."))
+                 await record_bot_message(state, msg)
                  return
 
         request_data = {
@@ -174,12 +257,16 @@ async def process_confirmation(message: types.Message, state: FSMContext, bot):
             await state.clear()
             
         except Exception as e:
-            await message.answer(t("error_generic", lang, error=str(e)))
+            msg = await message.answer(t("error_generic", lang, error=str(e)))
+            await record_bot_message(state, msg)
             
     elif message.text == edit_text:
+        await delete_prev_messages(message, state) # Delete Summary + Input
         await message.answer(t("cancelled", lang), reply_markup=get_main_menu_kb(lang, role="passenger"))
         await state.clear()
     else:
-        await message.answer(t("error_generic", lang, error="Please tap button."), reply_markup=get_confirmation_kb(lang))
+        await message.delete()
+        msg = await message.answer(t("error_generic", lang, error="Please tap button."), reply_markup=get_confirmation_kb(lang))
+        await record_bot_message(state, msg)
 
 # Async matching removed (Moved to Celery)
