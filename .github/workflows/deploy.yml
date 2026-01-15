@@ -31,6 +31,7 @@ jobs:
             --restart unless-stopped \
             -p 8001:8000 \
             --env-file /home/gogogo/.env.bot.prod \
+            --network gogogo-network \
             gogogo-bot
             
       - name: Clean up system
