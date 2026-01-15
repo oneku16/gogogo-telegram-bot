@@ -28,3 +28,13 @@ class EditPostState(StatesGroup):
     CONFIRM_REFILE = State()
     TARGET_ID = State() # Store ID to delete
     TARGET_TYPE = State() # 'offer' or 'request'
+
+class SettingsState(StatesGroup):
+    WAITING_LANG = State()
+
+class OverwriteState(StatesGroup):
+    CONFIRM = State()
+
+class ProfileState(StatesGroup):
+    WAITING_PHONE = State()
+    WAITING_NAME = State()

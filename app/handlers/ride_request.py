@@ -1,8 +1,9 @@
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
-from app.states import RideRequestState
+from app.states import RideRequestState, OverwriteState
 from app.services.api_client import api_client
-from app.keyboards import get_main_menu_kb, get_cancel_kb, get_common_locations_kb, get_dates_kb, get_seats_kb, get_confirmation_kb
+from app.keyboards import get_main_menu_kb, get_cancel_kb, get_common_locations_kb, get_dates_kb, get_seats_kb, get_confirmation_kb, get_overwrite_confirm_kb
+from app.handlers.common import has_active_post, get_latest_post
 from app.utils.formatting import parse_date, parse_time, format_date, format_time
 from app.locales import t, LANG_EN
 from datetime import date, time
@@ -18,6 +19,24 @@ def get_localized_texts(key):
 async def start_passenger_flow(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
+    user_id = user_data.get("user_id")
+
+    # Check active post
+    if await has_active_post(user_id):
+        pt, p = await get_latest_post(user_id)
+        # Create summary of active post
+        post_summary = t("mypost_none", lang)
+        if p:
+             if pt == "offer":
+                 post_summary = t("mypost_offer", lang, start=p['start_location'], end=p['end_location'], date=p['travel_start_date'], time=p['travel_start_time'], seats=p['free_seats'])
+             else:
+                 post_summary = t("mypost_request", lang, start=p['start_location'], end=p['end_location'], date=p['travel_start_date'], time=p['travel_start_time'], seats=p['seat_amount'])
+
+        await message.answer(t("active_post_limit", lang, post_summary=post_summary), reply_markup=get_overwrite_confirm_kb(lang))
+        await state.set_state(OverwriteState.CONFIRM)
+        await state.update_data(next_flow="passenger")
+        return
+
     await message.answer(t("start_loc_prompt", lang), reply_markup=get_common_locations_kb())
     await state.set_state(RideRequestState.START_LOC)
 

@@ -4,9 +4,10 @@ import aiofiles
 from aiogram import Router, F, types, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import StateFilter
-from app.states import RideOfferState
+from app.states import RideOfferState, OverwriteState
 from app.services.api_client import api_client
-from app.keyboards import get_main_menu_kb, get_cancel_kb, get_common_locations_kb, get_dates_kb, get_seats_kb, get_confirmation_kb
+from app.keyboards import get_main_menu_kb, get_cancel_kb, get_common_locations_kb, get_dates_kb, get_seats_kb, get_confirmation_kb, get_overwrite_confirm_kb
+from app.handlers.common import has_active_post, get_latest_post
 from app.utils.formatting import parse_date, parse_time, format_date, format_time
 from app.locales import t, LANG_EN
 from datetime import date, time
@@ -22,7 +23,25 @@ def get_localized_texts(key):
 async def start_driver_flow(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
-    await message.answer(t("start_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    user_id = user_data.get("user_id")
+
+    # Check active post
+    if await has_active_post(user_id):
+        pt, p = await get_latest_post(user_id)
+        # Create summary of active post
+        post_summary = t("mypost_none", lang)
+        if p:
+             if pt == "offer":
+                 post_summary = t("mypost_offer", lang, start=p['start_location'], end=p['end_location'], date=p['travel_start_date'], time=p['travel_start_time'], seats=p['free_seats'])
+             else:
+                 post_summary = t("mypost_request", lang, start=p['start_location'], end=p['end_location'], date=p['travel_start_date'], time=p['travel_start_time'], seats=p['seat_amount'])
+        
+        await message.answer(t("active_post_limit", lang, post_summary=post_summary), reply_markup=get_overwrite_confirm_kb(lang))
+        await state.set_state(OverwriteState.CONFIRM)
+        await state.update_data(next_flow="driver")
+        return
+
+    await message.answer(t("start_loc_prompt", lang), reply_markup=get_common_locations_kb(lang))
     await state.set_state(RideOfferState.START_LOC)
 
 @router.message(RideOfferState.START_LOC, F.text)
@@ -30,8 +49,16 @@ async def process_start_loc_text(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     await state.update_data(start_location=message.text)
-    await message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb()) 
+    await message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb(lang)) 
     await state.set_state(RideOfferState.END_LOC)
+
+@router.callback_query(RideOfferState.START_LOC, F.data == "loc:other")
+async def process_start_loc_other(callback: types.CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    lang = user_data.get("language", LANG_EN)
+    await callback.answer()
+    await callback.message.answer(t("other_city_prompt", lang))
+    # State remains START_LOC, waiting for text
 
 @router.callback_query(RideOfferState.START_LOC, F.data.startswith("loc:"))
 async def process_start_loc_callback(callback: types.CallbackQuery, state: FSMContext):
@@ -42,8 +69,16 @@ async def process_start_loc_callback(callback: types.CallbackQuery, state: FSMCo
     await state.update_data(start_location=city)
     await callback.answer(t("selected", lang, value=city))
     await callback.message.answer(t("loc_start", lang, value=city))
-    await callback.message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb())
+    await callback.message.answer(t("end_loc_prompt", lang), reply_markup=get_common_locations_kb(lang))
     await state.set_state(RideOfferState.END_LOC)
+
+@router.callback_query(RideOfferState.END_LOC, F.data == "loc:other")
+async def process_end_loc_other(callback: types.CallbackQuery, state: FSMContext):
+    user_data = await state.get_data()
+    lang = user_data.get("language", LANG_EN)
+    await callback.answer()
+    await callback.message.answer(t("other_city_prompt", lang))
+    # State remains END_LOC, waiting for text
 
 @router.callback_query(RideOfferState.END_LOC, F.data.startswith("loc:"))
 async def process_end_loc_callback(callback: types.CallbackQuery, state: FSMContext):
