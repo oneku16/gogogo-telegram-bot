@@ -12,6 +12,7 @@ from app.handlers.ride_request import start_passenger_flow
 from app.handlers.common import get_latest_post, has_active_post
 from app.locales import t, LANG_EN, LANG_RU, LANG_KG, MESSAGES
 from app.states import RegistrationState, EditPostState, RideOfferState, RideRequestState, SettingsState, OverwriteState, ProfileState
+from app.utils.deletion import delete_prev_messages, record_bot_message
 
 router = Router()
 
@@ -128,15 +129,17 @@ async def process_language_selection(callback: types.CallbackQuery, state: FSMCo
     await state.update_data(language=lang_code)
     
     await callback.answer(f"Selected: {lang_code}")
+    await callback.message.delete()
     
     # Now show instructions in selected language
     await callback.message.answer(t("instruction", lang_code), parse_mode="HTML")
     
     # Then ask for phone
-    await callback.message.answer(
+    msg = await callback.message.answer(
         t("share_phone", lang_code),
         reply_markup=get_phone_request_kb(lang_code) # We might need to localize this KB too perfectly, but text is static in get_phone_request_kb for now.
     )
+    await record_bot_message(state, msg)
     await state.set_state(RegistrationState.WAITING_FOR_PHONE)
 
 @router.message(Command("help"))
@@ -199,6 +202,7 @@ async def cmd_mypost(message: types.Message, state: FSMContext):
 
 @router.message(Command("edit"))
 async def cmd_edit(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     user_id = user_data.get("user_id")
     lang = user_data.get("language", LANG_EN)
@@ -229,10 +233,11 @@ async def cmd_edit(message: types.Message, state: FSMContext):
             [KeyboardButton(text=t("refile_yes", lang)), KeyboardButton(text=t("refile_no", lang))]
         ], resize_keyboard=True, one_time_keyboard=True)
 
-        await message.answer(
+        msg = await message.answer(
             t("refile_prompt", lang, type=post_type.upper(), date=post['travel_start_date'], start=post['start_location']),
             reply_markup=kb
         )
+        await record_bot_message(state, msg)
         await state.set_state(EditPostState.CONFIRM_REFILE)
         
     except Exception as e:
@@ -240,6 +245,7 @@ async def cmd_edit(message: types.Message, state: FSMContext):
 
 @router.message(EditPostState.CONFIRM_REFILE)
 async def process_refile_confirm(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     data = await state.get_data()
     lang = data.get("language", LANG_EN)
     role = data.get("role")
@@ -351,7 +357,14 @@ async def process_settings_role(callback: types.CallbackQuery, state: FSMContext
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     from app.keyboards import get_role_kb
-    await callback.message.answer(t("choose_role", lang), reply_markup=get_role_kb(lang))
+    await callback.message.delete()
+    
+    # We could record this message, but since next action is callback which deletes itself, it's fine.
+    # But if user gets stuck, maybe record? 
+    # Let's keep it simple.
+    
+    msg = await callback.message.answer(t("choose_role", lang), reply_markup=get_role_kb(lang))
+    await record_bot_message(state, msg)
     await state.set_state(RegistrationState.WAITING_FOR_ROLE)
     await callback.answer()
 
@@ -359,7 +372,9 @@ async def process_settings_role(callback: types.CallbackQuery, state: FSMContext
 async def process_settings_lang(callback: types.CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
-    await callback.message.answer(t("welcome_new", lang), reply_markup=get_language_kb())
+    await callback.message.delete()
+    msg = await callback.message.answer(t("welcome_new", lang), reply_markup=get_language_kb())
+    await record_bot_message(state, msg)
     await state.set_state(SettingsState.WAITING_LANG)
     await callback.answer()
 
@@ -386,6 +401,7 @@ async def process_settings_lang_confirm(callback: types.CallbackQuery, state: FS
     role = user_data.get("role")
     
     await callback.answer(t("selected", lang_code, value=lang_code))
+    await callback.message.delete()
     await callback.message.answer(t("instruction", lang_code), parse_mode="HTML", reply_markup=get_main_menu_kb(lang_code, role))
 
     await state.set_state(None) # Clear state
@@ -436,7 +452,9 @@ async def process_settings_edit(callback: types.CallbackQuery, state: FSMContext
 async def process_profile_phone(callback: types.CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
-    await callback.message.answer(t("share_phone", lang), reply_markup=get_phone_request_kb(lang))
+    await callback.message.delete() # Clear profile view
+    msg = await callback.message.answer(t("share_phone", lang), reply_markup=get_phone_request_kb(lang))
+    await record_bot_message(state, msg)
     await state.set_state(ProfileState.WAITING_PHONE)
     await callback.answer()
 
@@ -444,12 +462,15 @@ async def process_profile_phone(callback: types.CallbackQuery, state: FSMContext
 async def process_profile_name(callback: types.CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
-    await callback.message.answer(t("btn_change_name", lang) + ":", reply_markup=types.ReplyKeyboardRemove())
+    await callback.message.delete()
+    msg = await callback.message.answer(t("btn_change_name", lang) + ":", reply_markup=types.ReplyKeyboardRemove())
+    await record_bot_message(state, msg)
     await state.set_state(ProfileState.WAITING_NAME)
     await callback.answer()
 
 @router.message(ProfileState.WAITING_PHONE)
 async def process_profile_phone_input(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state) # Cleanup input + prompt
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     phone = None
@@ -465,10 +486,12 @@ async def process_profile_phone_input(message: types.Message, state: FSMContext)
         await message.answer(t("selected", lang, value=phone), reply_markup=get_main_menu_kb(lang, user_data.get("role")))
         await state.set_state(None)
     except Exception as e:
-         await message.answer(t("error_generic", lang, error=str(e)))
+         msg = await message.answer(t("error_generic", lang, error=str(e)))
+         await record_bot_message(state, msg)
 
 @router.message(ProfileState.WAITING_NAME)
 async def process_profile_name_input(message: types.Message, state: FSMContext):
+    await delete_prev_messages(message, state)
     user_data = await state.get_data()
     lang = user_data.get("language", LANG_EN)
     name = message.text
@@ -482,4 +505,5 @@ async def process_profile_name_input(message: types.Message, state: FSMContext):
         await message.answer(t("selected", lang, value=name), reply_markup=get_main_menu_kb(lang, user_data.get("role")))
         await state.set_state(None)
     except Exception as e:
-         await message.answer(t("error_generic", lang, error=str(e)))
+         msg = await message.answer(t("error_generic", lang, error=str(e)))
+         await record_bot_message(state, msg)
