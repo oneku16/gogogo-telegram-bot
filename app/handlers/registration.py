@@ -12,17 +12,42 @@ from app.utils.deletion import delete_prev_messages
 
 # cmd_start is now handled in menu.py
 
-@router.message(RegistrationState.WAITING_FOR_PHONE, F.contact)
+@router.message(RegistrationState.WAITING_FOR_PHONE)
 async def process_phone(message: types.Message, state: FSMContext):
     await delete_prev_messages(message, state)
-    contact = message.contact
+    
+    phone_number = None
+    first_name = message.from_user.first_name
+    last_name = message.from_user.last_name
+
+    if message.contact:
+        phone_number = message.contact.phone_number
+        first_name = message.contact.first_name or first_name
+        last_name = message.contact.last_name or last_name
+    elif message.text:
+        phone_number = message.text.strip()
+        # Basic validation
+        if not phone_number.replace("+", "").isdigit() or len(phone_number) < 9:
+             user_data = await state.get_data()
+             lang = user_data.get("language", LANG_EN)
+             # We need a proper error message for invalid phone, but for now reuse generic or specific provided
+             # reusing "error_number" or better "share_phone" again with error
+             msg = await message.answer(t("error_number", lang))
+             await record_bot_message(state, msg)
+             return
+    else:
+         user_data = await state.get_data()
+         lang = user_data.get("language", LANG_EN)
+         msg = await message.answer(t("share_phone", lang))
+         await record_bot_message(state, msg)
+         return
     
     # 1. Register User
     try:
         user_id = await api_client.create_user(
-            phone_number=contact.phone_number,
-            first_name=contact.first_name,
-            last_name=contact.last_name
+            phone_number=phone_number,
+            first_name=first_name,
+            last_name=last_name
         )
     except Exception as e:
         await message.answer(f"Error during registration: {e}")

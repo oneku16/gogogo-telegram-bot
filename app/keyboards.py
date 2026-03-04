@@ -100,9 +100,9 @@ def get_seats_kb() -> InlineKeyboardMarkup:
 
 def get_language_kb() -> InlineKeyboardMarkup:
     buttons = [
+        [InlineKeyboardButton(text="Кыргызча 🇰🇬", callback_data="lang:kg")],
         [InlineKeyboardButton(text="English 🇺🇸", callback_data="lang:en")],
-        [InlineKeyboardButton(text="Русский 🇷🇺", callback_data="lang:ru")],
-        [InlineKeyboardButton(text="Кыргызча 🇰🇬", callback_data="lang:kg")]
+        [InlineKeyboardButton(text="Русский 🇷🇺", callback_data="lang:ru")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
